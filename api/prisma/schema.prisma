@@ -1,0 +1,211 @@
+// Prisma schema pre CDN API
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Model pre používateľov systému
+model User {
+  id             String   @id @default(uuid())
+  username       String   @unique
+  password       String   // Hašované heslo
+  email          String?  @unique
+  role           Role     @default(USER)
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  lastLoginAt    DateTime? @map("last_login_at")
+  
+  // Vzťahy
+  files          File[]
+  folders        Folder[]
+  apiKeys        ApiKey[]
+  webhooks       Webhook[]
+  fileAccesses   FileAccess[]
+
+  @@map("users")
+}
+
+// Model pre API kľúče
+model ApiKey {
+  id             String   @id @default(uuid())
+  name           String
+  key            String   @unique
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at")
+  expiresAt      DateTime? @map("expires_at")
+  
+  // Vzťahy
+  userId         String   @map("user_id")
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("api_keys")
+}
+
+// Model pre súbory
+model File {
+  id             String   @id @default(uuid())
+  name           String
+  path           String
+  size           Int
+  mimeType       String   @map("mime_type")
+  checksum       String?  // MD5/SHA sum pre integritu
+  isPublic       Boolean  @default(true) @map("is_public")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  
+  // Metadáta
+  description    String?
+  tags           String[]
+  expiresAt      DateTime? @map("expires_at")
+  
+  // Vzťahy
+  userId         String   @map("user_id")
+  user           User     @relation(fields: [userId], references: [id])
+  versions       FileVersion[]
+  imageVariants  ImageVariant[]
+  fileAccesses   FileAccess[]
+  
+  @@unique([path, name])
+  @@index([path])
+  @@index([mimeType])
+  @@map("files")
+}
+
+// Model pre verzie súborov
+model FileVersion {
+  id             String   @id @default(uuid())
+  versionNumber  Int      @map("version_number")
+  path           String
+  size           Int
+  checksum       String?
+  createdAt      DateTime @default(now()) @map("created_at")
+  
+  // Vzťahy
+  fileId         String   @map("file_id")
+  file           File     @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@unique([fileId, versionNumber])
+  @@map("file_versions")
+}
+
+// Model pre varianty obrázkov
+model ImageVariant {
+  id             String   @id @default(uuid())
+  variantKey     String   @map("variant_key") // napr. "thumbnail", "medium", "large"
+  width          Int?
+  height         Int?
+  format         String?  // "jpg", "webp", "png", atď.
+  quality        Int?
+  path           String   // Cesta k súboru varianty
+  size           Int
+  createdAt      DateTime @default(now()) @map("created_at")
+  
+  // Vzťahy
+  fileId         String   @map("file_id")
+  file           File     @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@unique([fileId, variantKey])
+  @@map("image_variants")
+}
+
+// Model pre adresáre
+model Folder {
+  id             String   @id @default(uuid())
+  name           String
+  path           String
+  isPublic       Boolean  @default(true) @map("is_public")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  
+  // Metadáta
+  description    String?
+  
+  // Vzťahy
+  userId         String   @map("user_id")
+  user           User     @relation(fields: [userId], references: [id])
+
+  @@unique([path, name])
+  @@index([path])
+  @@map("folders")
+}
+
+// Model pre webhook
+model Webhook {
+  id             String     @id @default(uuid())
+  name           String
+  url            String
+  secret         String?    // Pre podpis payload
+  events         WebhookEvent[]
+  active         Boolean    @default(true)
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @updatedAt @map("updated_at")
+  
+  // Vzťahy
+  userId         String     @map("user_id")
+  user           User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deliveries     WebhookDelivery[]
+
+  @@map("webhooks")
+}
+
+// Model pre webhook events
+model WebhookEvent {
+  id             String   @id @default(uuid())
+  event          String   // "file.created", "file.updated", "file.deleted", atď.
+  
+  // Vzťahy
+  webhookId      String   @map("webhook_id")
+  webhook        Webhook  @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@unique([webhookId, event])
+  @@map("webhook_events")
+}
+
+// Model pre webhook deliveries
+model WebhookDelivery {
+  id             String   @id @default(uuid())
+  event          String
+  payload        Json
+  statusCode     Int?     @map("status_code")
+  response       String?
+  success        Boolean  @default(false)
+  createdAt      DateTime @default(now()) @map("created_at")
+  
+  // Vzťahy
+  webhookId      String   @map("webhook_id")
+  webhook        Webhook  @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@map("webhook_deliveries")
+}
+
+// Model pre prístupy k súborom (štatistiky)
+model FileAccess {
+  id             String   @id @default(uuid())
+  ip             String?
+  userAgent      String?  @map("user_agent")
+  referer        String?
+  accessTime     DateTime @default(now()) @map("access_time")
+  
+  // Vzťahy
+  fileId         String   @map("file_id")
+  file           File     @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  userId         String?  @map("user_id")
+  user           User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([fileId])
+  @@index([accessTime])
+  @@map("file_accesses")
+}
+
+// Enum pre roly používateľov
+enum Role {
+  ADMIN
+  MANAGER
+  USER
+}

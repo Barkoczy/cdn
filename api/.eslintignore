@@ -1,0 +1,18 @@
+# Ignorované adresáre
+node_modules/
+dist/
+build/
+coverage/
+
+# Cache adresáre
+.eslintcache
+.cache/
+
+# Ignorované súbory
+*.min.js
+*.d.ts
+
+# Konfiguračné súbory
+*.config.js
+*.config.cjs
+*.config.mjs

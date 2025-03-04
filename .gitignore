@@ -12,8 +12,16 @@ node_modules/
 *.crt
 
 # Volumes and data directories
+/traefik/
 /static/*
 !/static/.gitkeep
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+prisma/migrations/*
+!prisma/migrations/.gitkeep
 
 # Logs
 logs
@@ -47,13 +55,23 @@ Thumbs.db
 *.temp
 .cache/
 .temp/
+.eslintcache
 
 # Build files
 dist/
 build/
 out/
 
-# Dependencies lock files (optional, based on your needs)
-# package-lock.json
-# yarn.lock
-# pnpm-lock.yaml
+# Monitoring and metrics data
+prometheus/data/
+grafana/data/
+
+# Redis persistence
+dump.rdb
+appendonly.aof
+*.rdb
+
+# CDN specific
+.versions/
+.variants/
+uploads/
