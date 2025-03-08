@@ -7,6 +7,7 @@ import { cors } from 'hono/cors';
 import { PrismaClient } from '@prisma/client';
 
 import { filesRouter } from './routes/files';
+import { chunkedFilesRouter } from './routes/chunked-files';
 import { foldersRouter } from './routes/folders';
 import { authRouter } from './routes/auth';
 import { webhookRouter } from './routes/webhooks';
@@ -52,6 +53,7 @@ if (config.features.monitoring) {
 // API routes
 app.route('/api/auth', authRouter);
 app.route('/api/files', filesRouter);
+app.route('/api/files/chunked', chunkedFilesRouter);
 app.route('/api/folders', foldersRouter);
 
 // Rozšírené funkcionality
@@ -98,5 +100,13 @@ process.on('SIGTERM', cleanup);
 // Spusti server
 serve({
   fetch: app.fetch,
-  port
+  port,
+  serverOptions: {
+    requestTimeout: 7200000, // 2 hodiny v milisekundách
+    keepAliveTimeout: 120000, // 2 minúty
+    highWaterMark: 1024 * 1024, // 1MB buffer pre stream
+    maxHeaderSize: 32768, // 32KB pre hlavičky
+    keepAlive: true,
+    keepAliveInitialDelay: 60000, // 1 minúta
+  }
 });

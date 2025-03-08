@@ -1,15 +1,17 @@
+import { ContentfulStatusCode } from 'hono/utils/http-status';
 import { Context } from 'hono';
+import mime from 'mime-types';
 import { fileService } from '../services/file.service';
 import { folderService } from '../services/folder.service';
-import { validateFileSize, validateMimeType } from '../validators/file.validator';
 import { AppError } from '../middlewares/error-handler';
 import {
   pathParamSchema,
   uploadFileSchema,
-  listFilesQuerySchema
+  listFilesQuerySchema,
+  validateFileSize,
+  validateMimeType
 } from '../validators/file.validator';
-import { UserPayload } from '../types';
-import mime from 'mime-types';
+import type { UserPayload } from '../types';
 
 /**
  * Kontrolér pre prácu so súbormi
@@ -25,6 +27,11 @@ export class FileController {
 
     if (!file) {
       throw new AppError('Súbor nebol poskytnutý', 400);
+    }
+
+    // Validuj veľkosť súboru
+    if (!validateFileSize(file.size)) {
+      throw new AppError('Súbor je príliš veľký. Maximálna povolená veľkosť je 10GB', 400);
     }
 
     // Získaj a validuj metadáta z form data
@@ -79,24 +86,89 @@ export class FileController {
   }
 
   /**
-   * Získa súbor podľa cesty
+   * Získa súbor podľa cesty s možnosťou obmedzenia rýchlosti
    */
   async getFile(c: Context): Promise<Response> {
     const params = pathParamSchema.parse(c.req.param());
+    const rangeHeader = c.req.header('Range');
 
-    // Získaj súbor
-    const { buffer, metadata } = await fileService.getFile(params.path);
+    try {
+      // Najskôr získame iba metadáta súboru
+      const { metadata, rangeInfo } = await fileService.getFileMetadataAndRange(
+        params.path,
+        rangeHeader
+      );
 
-    // Nastav headers
-    return new Response(buffer, {
-      headers: {
+      // Základné hlavičky
+      const headers = {
         'Content-Type': metadata.mimeType,
-        'Content-Disposition': `inline; filename="${encodeURIComponent(metadata.name)}"`,
-        'Content-Length': metadata.size.toString(),
-        'Cache-Control': 'public, max-age=31536000', // 1 rok
+        'Content-Disposition': `attachment; filename="${encodeURIComponent(metadata.name)}"`,
+        'Accept-Ranges': 'bytes',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
         'Last-Modified': new Date(metadata.updatedAt).toUTCString()
+      };
+
+      // Vytvorenie ReadableStream pre Response
+      const readableStream = new ReadableStream({
+        async start(controller) {
+          try {
+            // Až tu vytvoríme stream - po odoslaní hlavičiek
+            const stream = await fileService.createFileStream(
+              params.path,
+              rangeInfo?.start,
+              rangeInfo?.end
+            );
+
+            // Napojíme eventy
+            stream.on('data', (chunk: Buffer) => {
+              controller.enqueue(chunk);
+            });
+
+            stream.on('end', () => {
+              controller.close();
+            });
+
+            stream.on('error', (err: Error) => {
+              console.error('Stream error:', err);
+              controller.error(err);
+            });
+          } catch (error) {
+            console.error('Error creating stream:', error);
+            controller.error(error);
+          }
+        },
+        cancel() {
+          // Client canceled download
+        }
+      });
+
+      // Vráť Response s hlavičkami a ReadableStream
+      if (rangeInfo) {
+        return new Response(readableStream, {
+          status: 206,
+          headers: {
+            ...headers,
+            'Content-Range': `bytes ${rangeInfo.start}-${rangeInfo.end}/${rangeInfo.length}`,
+            'Content-Length': String(rangeInfo.contentLength)
+          }
+        });
       }
-    });
+
+      // Inak vráť celý súbor
+      return new Response(readableStream, {
+        headers: {
+          ...headers,
+          'Content-Length': String(metadata.size)
+        }
+      });
+    } catch (error) {
+      if (error instanceof AppError) {
+        return c.json({ error: error.message }, error.statusCode as ContentfulStatusCode);
+      }
+      return c.json({ error: 'Nepodarilo sa načítať súbor' }, 500);
+    }
   }
 
   /**

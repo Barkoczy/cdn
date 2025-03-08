@@ -2,6 +2,58 @@
 
 Kompletné riešenie pre CDN (Content Delivery Network) s pokročilými funkciami pre správu obsahu vrátane verziovania súborov, webhookov, spracovania obrázkov a monitoringu.
 
+## Server OS
+
+Na Ubuntu 24.04 pre 10GB nahrávanie súborov, tu je upravená konfigurácia systémových parametrov:
+
+```bash
+# Pridaj tieto riadky do /etc/sysctl.conf
+fs.file-max = 1000000
+net.core.somaxconn = 65535
+net.core.netdev_max_backlog = 262144
+net.ipv4.tcp_max_syn_backlog = 262144
+net.ipv4.tcp_fin_timeout = 10
+net.ipv4.tcp_keepalive_time = 600
+net.ipv4.tcp_keepalive_intvl = 30
+net.ipv4.tcp_keepalive_probes = 10
+net.ipv4.tcp_max_tw_buckets = 262144
+net.ipv4.tcp_tw_reuse = 1
+net.ipv4.ip_local_port_range = 1024 65000
+# Pre veľké súbory
+net.core.rmem_max = 16777216
+net.core.wmem_max = 16777216
+net.ipv4.tcp_rmem = 4096 87380 16777216
+net.ipv4.tcp_wmem = 4096 65536 16777216
+net.ipv4.tcp_window_scaling = 1
+net.ipv4.tcp_timestamps = 1
+net.ipv4.tcp_sack = 1
+net.ipv4.tcp_congestion_control = cubic
+
+# Aplikuj zmeny
+sysctl -p
+
+# Úpravy limitov pre používateľov
+# Pridaj do /etc/security/limits.conf
+*       soft    nofile  1000000
+*       hard    nofile  1000000
+root    soft    nofile  1000000
+root    hard    nofile  1000000
+*       soft    memlock unlimited
+*       hard    memlock unlimited
+*       soft    stack   16384
+*       hard    stack   16384
+```
+
+Hlavné zmeny oproti pôvodnej konfigurácii:
+
+1. Zvýšil som `fs.file-max` na 1 milión - pre viac otvorených súborov
+2. Pridal som parametre pre TCP buffer (rmem_max, wmem_max, tcp_rmem, tcp_wmem) - umožňujú väčšie TCP okná pre rýchlejší prenos
+3. Zvýšil som limity otvorených súborov na 1 milión
+4. Pridal som neobmedzené memlock limity - pomáha pri rozsiahlych I/O operáciách
+5. Nastavil som stack limity pre lepšiu podporu paralelných operácií
+
+Tieto nastavenia by mali optimalizovať Ubuntu 24.04 pre prenos a spracovanie 10GB súborov.
+
 ## Architektúra
 
 Riešenie pozostáva z nasledujúcich komponentov:
@@ -352,4 +404,4 @@ MIT
 
 ---
 
-© 2025 CDN Project Team
+© 2025 CDN Barkozy
